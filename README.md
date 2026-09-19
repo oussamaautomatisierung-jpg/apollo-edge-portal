@@ -9,16 +9,33 @@ This project simulates an edge-device gateway. A Go HTTP server subscribes to an
 
 ## Architecture
 
-```text
-┌──────────────┐      MQTT       ┌────────────────┐      HTTP       ┌──────────────┐
-│ Sensor /     │ ───────────────▶ │ Mosquitto      │ ◀────────────── │ Go Portal    │
-│ Publisher    │                 │ Broker         │                 │ Dashboard    │
-└──────────────┘                 └────────────────┘                 └──────────────┘
-```
-
-- **Mosquitto** provides the MQTT broker.
-- **Go portal** subscribes to the sensor topic and serves the dashboard.
-- **Dashboard** displays the latest reading and refreshes automatically.
++---------------------+
+|   MQTT Publisher     |
+| (sensor / mosquitto_pub) |
++----------+-----------+
+           | publish: sensors/data (JSON)
+           v
++---------------------+
+|  Mosquitto Broker     |
+|  (container: mosquitto)|
+|      port 1883        |
++----------+-----------+
+           | subscribe: sensors/data
+           v
++---------------------+
+|   Go HTTP Server      |
+| (container: go-portal)|
+| - MQTT client          |
+| - in-memory state      |
+| - HTML template engine |
+|      port 8080         |
++----------+-----------+
+           | HTTP GET /
+           v
++---------------------+
+|     Web Browser        |
+| (auto-refresh every 5s)|
++---------------------+
 
 ## Running with Docker
 
