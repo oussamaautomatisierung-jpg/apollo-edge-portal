@@ -1,0 +1,14 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+*.swp
+
+# Go build artifacts
+edge-portal
+*.exe
+
+# Environment files
+.env

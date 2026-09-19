@@ -49,6 +49,14 @@ func main() {
 	broker := getEnv("MQTT_BROKER", "localhost")
 	opts.AddBroker("tcp://" + broker + ":1883")
 	opts.SetClientID("go-edge-portal")
+	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
+		log.Printf("MQTT connection lost: %v", err)
+		mqttConnected = false
+	})
+	opts.SetOnConnectHandler(func(client mqtt.Client) {
+		log.Println("MQTT connection (re)established")
+		mqttConnected = true
+	})
 
 	client := mqtt.NewClient(opts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
