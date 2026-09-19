@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta http-equiv="refresh" content="5">
+	<meta charset="UTF-8">
+	<title>Edge Device Portal</title>
+	<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+	<h1>EDGE DEVICE PORTAL</h1>
+	<p>Device: {{.DeviceName}}</p>
+	<p>Status: {{if .Connected}}<strong style="color:green">ONLINE</strong>{{else}}<strong style="color:red">OFFLINE</strong>{{end}}</p>
+	<p>Temperature: {{.Temperature}} °C</p>
+	<p>Power: {{.Power}} kW</p>
+	<p>Current: {{.Current}} A</p>
+	<p><em>Last updated: {{.LastUpdated}}</em></p>
+</body>
+</html>
