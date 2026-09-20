@@ -1,4 +1,4 @@
-FROM golang:1.27-alpine AS builder
+FROM golang:1.27.0-alpine3.23 AS builder
 
 WORKDIR /app
 
@@ -9,7 +9,7 @@ COPY . .
 
 RUN go build -o edge-portal main.go
 
-FROM alpine:latest
+FROM alpine:3.23
 
 WORKDIR /app
 

@@ -1,6 +1,6 @@
 module apollo-edge-portal
 
-go 1.27.1
+go 1.27.0
 
 require github.com/eclipse/paho.mqtt.golang v1.5.1
 

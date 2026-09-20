@@ -1,188 +1,106 @@
-```markdown
-# Apollo Edge Portal
+ # Apollo Edge Portal
 
-A minimal edge-device monitoring portal built with Go, MQTT (Eclipse Mosquitto), and Docker. The portal subscribes to sensor data over MQTT, keeps the latest reading in memory, and displays it on a single auto-refreshing HTML page with an industrial-style dashboard aesthetic.
+ A minimal edge device monitoring portal built with Go, MQTT, and Docker. The portal subscribes to sensor readings published over MQTT, keeps the latest values in memory, and serves them on a single auto-refreshing HTML page.
 
-## Overview
+ ## Architecture
 
-This project simulates an edge-device gateway. A Go HTTP server subscribes to an MQTT topic, stores the most recent sensor payload in memory, and renders it on a web page that refreshes every five seconds. Everything runs in Docker, so the entire stack starts with a single command.
+ MQTT Publisher → Mosquitto Broker → Go Server (MQTT Subscriber) → In-Memory State → HTTP Handler → Browser (auto-refresh every 5s)
 
-## Architecture
+ The Go server does two things concurrently:
 
-+---------------------+
-|   MQTT Publisher     |
-| (sensor / mosquitto_pub) |
-+----------+-----------+
-           | publish: sensors/data (JSON)
-           v
-+---------------------+
-|  Mosquitto Broker     |
-|  (container: mosquitto)|
-|      port 1883        |
-+----------+-----------+
-           | subscribe: sensors/data
-           v
-+---------------------+
-|   Go HTTP Server      |
-| (container: go-portal)|
-| - MQTT client          |
-| - in-memory state      |
-| - HTML template engine |
-|      port 8080         |
-+----------+-----------+
-           | HTTP GET /
-           v
-+---------------------+
-|     Web Browser        |
-| (auto-refresh every 5s)|
-+---------------------+
+ - Subscribes to the `sensors/data` topic on the Mosquitto broker and updates an in-memory struct whenever a new message arrives.
+ - Serves an HTTP page at `/` that renders the latest in-memory values as HTML. The page auto-refreshes every 5 seconds without client-side JavaScript.
 
-## Running with Docker
+ A `/health` endpoint reports server and MQTT connection status as JSON, useful for container health checks and manual debugging.
 
-Start the stack from the project directory:
+ ## Project Structure
 
-```bash
-docker compose up --build
-```
+ ```text
+ apollo-edge-portal/
+ ├── main.go              # Go server: MQTT subscriber + HTTP handler
+ ├── go.mod
+ ├── go.sum
+ ├── templates/
+ │   └── index.html       # HTML template rendered at "/"
+ ├── static/
+ │   └── style.css        # Industrial-themed CSS
+ ├── Dockerfile            # Multi-stage build for the Go server
+ ├── docker-compose.yml    # Orchestrates go-portal + mosquitto
+ ├── setup.sh              # Checks Docker is running, then starts the stack
+ └── README.md
+ ```
 
-Open [http://localhost:8080](http://localhost:8080) in a browser. Stop the services with:
+ ## Installation & Running
 
-```bash
-docker compose down
-```
+ ### Prerequisites
 
-## Publishing a test reading
+ - Docker and Docker Compose installed and running
 
-If the broker exposes its MQTT port on `localhost:1883`, publish a JSON payload with any MQTT client. For example, using `mosquitto_pub`:
+ ### Quick Start
 
-```bash
-mosquitto_pub -h localhost -p 1883 -t sensors/reading \\
-	-m '{"device":"edge-01","temperature":23.4,"humidity":48.2,"status":"online"}'
-```
+ ```sh
+ ./setup.sh
+ ```
 
-The dashboard displays the new payload on its next refresh.
+ `setup.sh` verifies that the Docker daemon is running, then starts the full stack with `docker compose up`.
 
-## Configuration
+ The portal is available at [http://localhost:8080](http://localhost:8080).
 
-The portal can be configured through environment variables:
+ To stop the stack:
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `MQTT_BROKER` | `tcp://mosquitto:1883` | MQTT broker address |
-| `MQTT_TOPIC` | `sensors/reading` | Topic to subscribe to |
-| `HTTP_ADDR` | `:8080` | HTTP listen address |
+ ```sh
+ docker compose down
+ ```
 
-## Development
+ ## Testing
 
-Run the Go service locally with a reachable Mosquitto broker:
+ Once the stack is running, publish a test sensor reading:
 
-```bash
-go run .
-```
+ ```sh
+ docker exec -it mosquitto mosquitto_pub -t sensors/data -m '{"temperature": 25.5, "power": 3.2, "current": 12.0}'
+ ```
 
-Build the service with:
+ Refresh [http://localhost:8080](http://localhost:8080), or wait five seconds, to see the updated values and timestamp.
 
-```bash
-go build ./...
-```
+ Check server and MQTT connection status:
 
-## Notes
+ ```sh
+ curl http://localhost:8080/health
+ ```
 
-- The latest reading is stored in memory and is lost when the portal restarts.
-- The dashboard is intentionally lightweight and does not require a database.
-- In production, secure MQTT with authentication and TLS before exposing it beyond a trusted network.
-```
+ Expected response:
 
-Both containers run on the same Docker network (`apollo-edge-portal_default`), allowing the Go service to reach Mosquitto by its container name (`mosquitto`) instead of a hardcoded IP.
+ ```json
+ {"status":"ok","mqtt_connected":true}
+ ```
 
-## Requirements
+ ## Configuration
 
-- Docker Desktop (with Docker Compose)
-- A modern web browser
-- (Optional, for manual testing) `mosquitto_pub` — already included inside the Mosquitto container, so no local install is needed
+ | Environment Variable | Default | Description |
+ |---|---|---|
+ | `MQTT_BROKER` | `localhost` | Hostname of the MQTT broker, without scheme or port |
 
-## Project Structure
+ The server connects to `tcp://<MQTT_BROKER>:1883`. Use a bare hostname such as `mosquitto` in Docker Compose, not a full URL.
 
-## Installation & Running
+ ## Design Decisions
 
-1. Clone or download this repository.
-2. Open a terminal in the project root (`apollo-edge-portal/`).
-3. Run the setup script (recommended):
-```bash
-   ./setup.sh
-```
-   This checks that Docker is running, then builds and starts both containers.
+ - **In-memory state only:** The latest reading is sufficient at this scale; a restart waits for the next MQTT message.
+ - **No JavaScript frameworks:** A plain meta-refresh keeps the frontend dependency-free.
+ - **Single MQTT topic:** Temperature, power, and current are sent as one JSON payload on `sensors/data`.
+ - **Docker Compose as the run path:** Broker and server versions and networking remain consistent.
 
-   Or start manually with Docker Compose:
-```bash
-   docker compose up --build
-```
-4. Open your browser to:
+ ## Troubleshooting
 
-To stop the stack:
-```bash
-docker compose down
-```
+ **Page shows “Disconnected” or `mqtt_connected: false`**
 
-## Accessing the Portal from Another Device on the Same Network
+ - Confirm the broker is running: `docker compose ps`
+ - Check server logs: `docker compose logs go-portal`
 
-The `go-portal` service publishes port 8080 on all network interfaces (`"8080:8080"` in `docker-compose.yml`, not restricted to `127.0.0.1`). Any device on the same local network can reach the dashboard at:
-Find the host machine's IP with `ipconfig` (Windows) and look for the IPv4 address on the active network adapter.
+ **Published messages do not appear**
 
-## MQTT Topic & Example Message
+ - Publish to exactly `sensors/data`.
+ - Ensure the payload is valid JSON with `temperature`, `power`, and `current` fields.
 
-- **Topic:** `sensors/data`
-- **Payload format (JSON):**
-```json
-  {
-    "temperature": 25.5,
-    "power": 3.2,
-    "current": 12.0
-  }
-```
+ **Port 8080 is already in use**
 
-### Sending a Test Message (Windows PowerShell)
-
-Because PowerShell handles nested quotes differently from Bash, use the `--%` stop-parsing token when publishing a JSON payload:
-
-```powershell
-docker --% exec -it mosquitto mosquitto_pub -t sensors/data -m "{\"temperature\": 25.5, \"power\": 3.2, \"current\": 12.0}"
-```
-
-After running this, refresh the browser (or wait up to 5 seconds for auto-refresh) to see the updated values and timestamp.
-
-### Sending a Test Message (Linux/macOS)
-
-```bash
-docker exec -it mosquitto mosquitto_pub -t sensors/data -m '{"temperature": 25.5, "power": 3.2, "current": 12.0}'
-```
-
-## Health Check
-
-The server exposes a simple health endpoint for monitoring:
-Example response:
-```json
-{"status": "ok", "mqtt_connected": true}
-```
-
-## Design Decisions
-
-- **In-memory state:** The latest sensor reading is stored in a package-level variable rather than a database, matching the "minimal edge device" scope of this assignment. Simpler, faster, and sufficient for a single live reading.
-- **Auto-refresh via `<meta>` tag:** Rather than adding JavaScript (explicitly out of scope per the assignment), the page uses `<meta http-equiv="refresh" content="5">` to poll the server every 5 seconds.
-- **Dynamic device name:** `os.Hostname()` is used to populate the device name shown on the dashboard, so it reflects the actual container/host running the service rather than a hardcoded string.
-- **Dynamic connection status:** A `mqttConnected` boolean, set once the MQTT client successfully connects, drives the ONLINE/OFFLINE indicator on the page rather than a static label.
-- **Structured logging:** All output uses Go's `log` package (not `fmt`) so every line is automatically timestamped, making it easier to trace events during troubleshooting.
-- **Error handling strategy:**
-  - Invalid/malformed JSON payloads are logged (with the raw payload) and skipped — the server keeps running.
-  - A failure to start the HTTP server is fatal (`log.Fatalf`), since the service has no purpose without it.
-  - A failure to connect to MQTT at startup is fatal (`log.Fatal`), since the service cannot function without a data source.
-- **Industrial-style CSS:** Dark background with a subtle grid pattern, monospace font, and boxed/bordered data fields — chosen to evoke a real industrial control panel rather than a generic web page.
-- **Multi-stage Dockerfile:** Keeps the final image small by building the Go binary in one stage and copying only the compiled binary, templates, and static assets into the final image.
-
-## Troubleshooting
-
-- **Style changes don't appear in the browser:** Static files (`static/`) are copied into the Docker image at build time, not mounted as a live volume. After editing `style.css`, rebuild with `docker compose down && docker compose up --build`, or do a hard refresh (`Ctrl+Shift+R`) if only the browser cache is stale.
-- **`docker-compose.yml` breaks after editing in VS Code:** VS Code can sometimes convert YAML indentation to tabs, which breaks the file. If this happens, edit the file in Notepad instead and save it directly with the correct filename.
-- **PowerShell errors when publishing MQTT messages with JSON:** Use the `docker --% exec ...` syntax shown above — the `--%` token stops PowerShell from re-interpreting the quotes inside the JSON payload.
-- **Page shows `Status: OFFLINE` or zero values on first load:** This is expected before any MQTT message has been published. Send a test message (see above) and refresh.
-- **`bash setup.sh` fails with "Docker is not running" even though Docker Desktop is open:** This happens when running the script through WSL without Docker's WSL Integration enabled (Docker Desktop → Settings → Resources → WSL Integration). As a workaround, run `docker compose up --build` directly instead of the script.
+ Stop the process using port 8080 or change the host-side mapping in `docker-compose.yml`.
